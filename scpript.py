@@ -182,7 +182,7 @@ async function update(){
 
     // marquee for buses delayed >30
     const delayedBuses = Object.values(buses).filter(b=>b.delay>30);
-    marqueeInner.textContent = delayedBuses.map(b=>`${b.route_id||'?'} / ${b.vehicleNo||'?'} | Delay: ${b.delay}s | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}`).join("   ");
+    marqueeInner.textContent = delayedBuses.map(b=>`   ${b.route_id||'?'} / ${b.vehicleNo||'?'} | Delay: ${b.delay}s | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}   |||`).join("   ");
 
     // stops
     if(stopMarkers.length===0){
@@ -197,7 +197,7 @@ async function update(){
     for(const [id,b] of Object.entries(buses)){
         if(!b.lat||!b.lon) continue;
         const route=b.route_id||'?', busNo=b.vehicleNo||'?', angle=(b.angle||0)-90;
-        let color="green"; if(b.delay>60) color="red"; else if(b.delay>0) color="yellow";
+        let color="green"; if(b.delay>240) color="black"; else if(b.delay>120) color="red"; else if(b.delay>60) color="orange"; else if(b.delay>0) color="yellow"; else if(b.delay<0) color="pink";
         const iconHtml=`<div style="text-align:center;"><div style="color:${color}; font-weight:bold; font-size:12px;">${route} / ${busNo}</div><div class="bus-label" style="color:${color}; transform: rotate(${angle}deg);">➤</div></div>`;
         const icon=L.divIcon({className:'', html:iconHtml, iconSize:[50,50], iconAnchor:[25,25]});
         if(!busMarkers[id]){
