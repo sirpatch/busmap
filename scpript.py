@@ -6,7 +6,6 @@ app = Flask(__name__)
 BASE = "https://czynaczas.pl"
 SOCKET = f"{BASE}/socket.io/?EIO=4&transport=polling"
 
-# All cities
 cities = [
     {"name": "zielonagora", "stops_url": f"{BASE}/api/zielonagora/transport", "socket_ns": "zielonagora", "referer": f"{BASE}/zielonagora", "center": [51.94,15.50], "zoom": 13},
     {"name": "wroclaw", "stops_url": f"{BASE}/api/wroclaw/transport", "socket_ns": "wroclaw", "referer": f"{BASE}/wroclaw", "center": [51.11,17.03], "zoom": 13},
@@ -24,9 +23,8 @@ cities = [
     {"name": "trojmiasto", "stops_url": f"{BASE}/api/trojmiasto/transport", "socket_ns": "trojmiasto", "referer": f"{BASE}/trojmiasto", "center": [54.35,18.65], "zoom": 12},
 ]
 
-COOKIE = ""  # optional cookie
+COOKIE = ""
 active_city_name = "zielonagora"
-
 latest_buses = {}
 latest_stops = {}
 last_update = {}
@@ -67,7 +65,7 @@ def fetch_stops(city):
                     "name":s[1],
                     "lat":s[2],
                     "lon":s[3],
-                    "stop_name":s[1],
+                    "stop_name":f"{s[1]} - {s[0]}",
                     "trip_headsign": s[4] if len(s) > 4 else ""
                 })
         return result
@@ -96,23 +94,29 @@ def index():
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Poland — Multi-City Bus Tracker</title>
+<title>Bus Tracker CRT Style</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-html,body,#map{height:100%;margin:0;background:#1e1e1e;}
-.leaflet-container { background: #1e1e1e; }
-.bus-label { font-size:16px;font-weight:bold;text-align:center;display:inline-block; }
+html,body,#map{height:100%;margin:0;background:#101010;color:#0f0;font-family:'Courier New',monospace;}
+.leaflet-container { background:#101010; }
 .stop-label { font-size:12px;color:#00ffff;text-align:center;font-weight:bold;text-shadow:0 0 2px black; }
-#bus-info { position: fixed; bottom:0; left:0; width:100%; background: rgba(0,0,0,0.85); color:#fff; font-size:14px; padding:6px 10px; z-index:9999; }
-#bus-marquee { position: fixed; top:0; left:0; width:100%; background: rgba(0,0,0,0.85); color:#fff; font-size:14px; white-space: nowrap; overflow:hidden; z-index:9999; padding:5px 10px;}
-#bus-marquee span { display:inline-block; padding-right:50px; }
-#stats { position: fixed; top:30px; right:10px; background: rgba(0,0,0,0.7); color:#fff; font-size:14px; padding:6px 10px; border-radius:5px; z-index:9999; }
+#bus-info { position: fixed; bottom:0; left:0; width:100%; background: rgba(0,0,0,0.85); color:#0f0; font-size:14px; padding:6px 10px; z-index:9999; border-top:1px solid #0f0; }
+#bus-marquee { position: fixed; top:0; left:0; width:100%; background: rgba(0,0,0,0.85); color:#0f0; font-size:14px; white-space: nowrap; overflow:hidden; z-index:9999; padding:5px 10px; border-bottom:1px solid #0f0; }
+#stats { position: fixed; top:30px; right:10px; background: rgba(0,0,0,0.7); color:#0f0; font-size:14px; padding:6px 10px; border-radius:5px; z-index:9999; border:1px solid #0f0; }
 #menu-container { position: fixed; top:70px; right:10px; z-index:9999; }
-#menu-toggle { background: rgba(0,0,0,0.7); color:#fff; border:none; padding:5px 10px; border-radius:5px; cursor:pointer; font-weight:bold; }
-#menu { margin-top:5px; background: rgba(0,0,0,0.85); color:#fff; padding:10px; border-radius:5px; display:none; }
+#menu-toggle { background: rgba(0,0,0,0.7); color:#0f0; border:1px solid #0f0; padding:5px 10px; border-radius:5px; cursor:pointer; font-weight:bold; }
+#menu { margin-top:5px; background: rgba(0,0,0,0.85); color:#0f0; padding:10px; border-radius:5px; display:none; border:1px solid #0f0; }
 #menu label { display:block; margin-bottom:5px; cursor:pointer; }
+
+@keyframes rgbGlow {
+  0%   { text-shadow: 0 0 8px red, 0 0 15px orange; }
+  25%  { text-shadow: 0 0 8px lime, 0 0 15px yellow; }
+  50%  { text-shadow: 0 0 8px cyan, 0 0 15px lightblue; }
+  75%  { text-shadow: 0 0 8px magenta, 0 0 15px violet; }
+  100% { text-shadow: 0 0 8px red, 0 0 15px orange; }
+}
 </style>
 </head>
 <body>
@@ -131,97 +135,101 @@ html,body,#map{height:100%;margin:0;background:#1e1e1e;}
 </div>
 
 <script>
-const toggleBtn = document.getElementById("menu-toggle");
-const menu = document.getElementById("menu");
-toggleBtn.addEventListener("click", ()=>{menu.style.display = (menu.style.display==="none")?"block":"none";});
+const toggleBtn=document.getElementById("menu-toggle");
+const menu=document.getElementById("menu");
+toggleBtn.addEventListener("click",()=>{menu.style.display=(menu.style.display==="none")?"block":"none";});
 
-let activeCity = document.querySelector('.city-radio:checked').value;
-document.querySelectorAll('.city-radio').forEach(cb => { cb.addEventListener('change', ()=>{ if(cb.checked) setActiveCity(cb.value); }); });
+let activeCity=document.querySelector('.city-radio:checked').value;
+document.querySelectorAll('.city-radio').forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)setActiveCity(cb.value);})); 
 
-const map = L.map('map').setView([52,19],6);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap & Carto'}).addTo(map);
+const map=L.map('map').setView([52,19],6);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png').addTo(map);
 
-let busMarkers = {}, stopMarkers = [], trackedBusId = null;
-const marqueeInner = document.getElementById("marquee-inner");
-
-// smooth continuous scroll
-let marqueeX = window.innerWidth;
-function animateMarquee(){
-    marqueeX -= 1;
-    if(marqueeX < -marqueeInner.offsetWidth) marqueeX = window.innerWidth;
-    marqueeInner.style.transform = `translateX(${marqueeX}px)`;
-    requestAnimationFrame(animateMarquee);
-}
+let busMarkers={},stopMarkers=[],trackedBusId=null;
+const marqueeInner=document.getElementById("marquee-inner");
+let marqueeX=window.innerWidth;
+function animateMarquee(){marqueeX-=0.5;if(marqueeX<-marqueeInner.offsetWidth)marqueeX=window.innerWidth;marqueeInner.style.transform=`translateX(${marqueeX}px)`;requestAnimationFrame(animateMarquee);}
 animateMarquee();
 
 function setActiveCity(city){
-    activeCity = city;
+    activeCity=city;
     fetch('/api/set_city?city='+city);
+    for(let id in busMarkers)map.removeLayer(busMarkers[id]);
+    busMarkers={};
+    stopMarkers.forEach(m=>map.removeLayer(m));
+    stopMarkers=[];
+    trackedBusId=null;
+    marqueeInner.textContent="";
+    const cData={{cities|tojson}};
+    const cityInfo=cData.find(c=>c.name===city);
+    if(cityInfo)map.setView(cityInfo.center,cityInfo.zoom);
+}
 
-    // Clear markers from previous city
-    for(let id in busMarkers) map.removeLayer(busMarkers[id]);
-    busMarkers = {};
-    stopMarkers.forEach(m => map.removeLayer(m));
-    stopMarkers = [];
-    trackedBusId = null;
-    marqueeInner.textContent = "";
-
-    // Center map
-    const cData = {{cities|tojson}};
-    const cityInfo = cData.find(c => c.name === city);
-    if(cityInfo) map.setView(cityInfo.center, cityInfo.zoom);
+function delayColor(delay){
+    if (delay < 0) return "pink";
+    else if (delay < 30) return "green";
+    else if(delay < 60) return "yellow";
+    else if(delay < 90) return "orange";
+    else if(delay < 240) return "red";
+    else if(delay < 3600) return "black";
+    return "white";
 }
 
 async function update(){
-    const [busRes, stopRes] = await Promise.all([fetch('/api/buses'), fetch('/api/stops')]);
-    const buses = (await busRes.json())[activeCity] || {};
-    const stops = (await stopRes.json())[activeCity] || [];
+    const [busRes,stopRes]=await Promise.all([fetch('/api/buses'),fetch('/api/stops')]);
+    const buses=(await busRes.json())[activeCity]||{};
+    const stops=(await stopRes.json())[activeCity]||[];
 
-    document.getElementById('stats').innerHTML = "Buses driving: "+Object.keys(buses).length;
+    document.getElementById('stats').innerHTML="Buses driving: "+Object.keys(buses).length;
 
-    // marquee for buses delayed >30
-    const delayedBuses = Object.values(buses).filter(b=>b.delay>30);
-    marqueeInner.textContent = delayedBuses.map(b=>`   ${b.route_id||'?'} / ${b.vehicleNo||'?'} | Delay: ${b.delay}s | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}   |||`).join("   ");
+    const delayedBuses=Object.values(buses).filter(b=>b.delay>30);
+    marqueeInner.textContent=delayedBuses.map(b=>`   ${b.route_id||'?'} / ${b.vehicleNo||'?'} | Delay: ${b.delay}s | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}   |||`).join("   ");
 
-    // stops
     if(stopMarkers.length===0){
         stops.forEach(s=>{
-            const m = L.marker([s.lat,s.lon], {icon:L.divIcon({className:'stop-label', html:`🚏<br>${s.stop_name}`, iconSize:[60,25], iconAnchor:[30,0]})}).addTo(map);
-            m.on('click', ()=>{ trackedBusId=null; document.getElementById('bus-info').innerHTML=`Stop: ${s.stop_name} | Driving to: ${s.trip_headsign||'n/a'}`; });
+            const m=L.marker([s.lat,s.lon],{icon:L.divIcon({className:'stop-label',html:`🚏<br>${s.stop_name}`,iconSize:[60,25],iconAnchor:[30,0]})}).addTo(map);
+            m.on('click',()=>{trackedBusId=null;document.getElementById('bus-info').innerHTML=`Stop: ${s.stop_name} | Driving to: ${s.trip_headsign||'n/a'}`;});
             stopMarkers.push(m);
         });
     }
 
-    // buses
     for(const [id,b] of Object.entries(buses)){
-        if(!b.lat||!b.lon) continue;
-        const route=b.route_id||'?', busNo=b.vehicleNo||'?', angle=(b.angle||0)-90;
-        let color="green"; if(b.delay>240) color="black"; else if(b.delay>120) color="red"; else if(b.delay>60) color="orange"; else if(b.delay>0) color="yellow"; else if(b.delay<0) color="pink";
-        const iconHtml=`<div style="text-align:center;"><div style="color:${color}; font-weight:bold; font-size:12px;">${route} / ${busNo}</div><div class="bus-label" style="color:${color}; transform: rotate(${angle}deg);">➤</div></div>`;
-        const icon=L.divIcon({className:'', html:iconHtml, iconSize:[50,50], iconAnchor:[25,25]});
+        if(!b.lat||!b.lon)continue;
+        const route=b.route_id||'?';
+        const busNo=b.vehicleNo||'?';
+        const angle=(b.angle||0)-90;
+        const color=delayColor(b.delay||0);
+
+        const iconHtml=`
+        <div style="text-align:center;">
+            <div style="font-size:26px; transform: rotate(${angle}deg); color:${color}; animation: rgbGlow 4s infinite linear;">➤</div>
+            <div class="bus-label" style="color:${color}; font-size:16px;">${route} / ${busNo}</div>
+        </div>`;
+        const icon=L.divIcon({className:'',html:iconHtml,iconSize:[50,50],iconAnchor:[25,25]});
+
         if(!busMarkers[id]){
             busMarkers[id]=L.marker([b.lat,b.lon],{icon}).addTo(map);
-            busMarkers[id].on('click', ()=>{ trackedBusId=id; document.getElementById('bus-info').innerHTML=`Route / Bus: ${route} / ${busNo} | Delay: ${b.delay||'n/a'} | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}`; });
-        } else {
+            busMarkers[id].on('click',()=>{
+                trackedBusId=id;
+                document.getElementById('bus-info').innerHTML=`Route / Bus: ${route} / ${busNo} | Status: ${b.current_status||'n/a'} | Delay: ${b.delay||'n/a'} | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}`;
+            });
+        }else{
             busMarkers[id].setLatLng([b.lat,b.lon]);
             busMarkers[id].setIcon(icon);
         }
     }
 
-    // track selected bus
-    if(trackedBusId && busMarkers[trackedBusId]){
-        const b = buses[trackedBusId];
-        if(b) map.setView([b.lat,b.lon], map.getZoom(), {animate:true});
+    if(trackedBusId && buses[trackedBusId]){
+        const b=buses[trackedBusId];
+        document.getElementById('bus-info').innerHTML=`Route / Bus: ${b.route_id||'?'} / ${b.vehicleNo||'?'} | Status: ${b.current_status||'n/a'} | Delay: ${b.delay||'n/a'} | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}`;
+        map.setView([b.lat,b.lon],map.getZoom(),{animate:true});
     }
 }
 
 update();
 setInterval(update,3500);
-
-// untrack bus on map click
-map.on('click', ()=>{ trackedBusId=null; document.getElementById('bus-info').innerHTML="Click a bus or stop to see info..."; });
-
+map.on('click',()=>{trackedBusId=null;document.getElementById('bus-info').innerHTML="Click a bus or stop to see info...";});
 </script>
 </body>
 </html>
@@ -239,12 +247,12 @@ def api_stops():
 @app.route("/api/set_city")
 def set_city():
     global active_city_name
-    city = request.args.get("city")
+    city=request.args.get("city")
     if city in [c["name"] for c in cities]:
-        active_city_name = city
+        active_city_name=city
     return jsonify({"active_city":active_city_name})
 
 if __name__=="__main__":
     threading.Thread(target=updater,daemon=True).start()
     print("🌍 Running on http://localhost:5000")
-    app.run(host="0.0.0.0", port=5000, threaded=True)
+    app.run(host="0.0.0.0",port=5000,threaded=True)
