@@ -1,262 +1,250 @@
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, render_template_string, jsonify, request
 import requests, re, json, time, threading
 
 app = Flask(__name__)
 
 BASE = "https://czynaczas.pl"
 SOCKET = f"{BASE}/socket.io/?EIO=4&transport=polling"
-STOPS_URL = f"{BASE}/api/zielonagora/transport"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Origin": BASE,
-    "Referer": BASE + "/zielonagora",
-    "Accept": "*/*",
-}
+# All cities
+cities = [
+    {"name": "zielonagora", "stops_url": f"{BASE}/api/zielonagora/transport", "socket_ns": "zielonagora", "referer": f"{BASE}/zielonagora", "center": [51.94,15.50], "zoom": 13},
+    {"name": "wroclaw", "stops_url": f"{BASE}/api/wroclaw/transport", "socket_ns": "wroclaw", "referer": f"{BASE}/wroclaw", "center": [51.11,17.03], "zoom": 13},
+    {"name": "warsaw", "stops_url": f"{BASE}/api/warsaw/transport", "socket_ns": "warsaw", "referer": f"{BASE}/warsaw", "center": [52.23,21.01], "zoom": 12},
+    {"name": "poznan", "stops_url": f"{BASE}/api/poznan/transport", "socket_ns": "poznan", "referer": f"{BASE}/poznan", "center": [52.41,16.93], "zoom": 13},
+    {"name": "kielce", "stops_url": f"{BASE}/api/kielce/transport", "socket_ns": "kielce", "referer": f"{BASE}/kielce", "center": [50.87,20.63], "zoom": 13},
+    {"name": "krakow", "stops_url": f"{BASE}/api/krakow/transport", "socket_ns": "krakow", "referer": f"{BASE}/krakow", "center": [50.06,19.94], "zoom": 13},
+    {"name": "leszno", "stops_url": f"{BASE}/api/leszno/transport", "socket_ns": "leszno", "referer": f"{BASE}/leszno", "center": [51.84,16.57], "zoom": 13},
+    {"name": "lodz", "stops_url": f"{BASE}/api/lodz/transport", "socket_ns": "lodz", "referer": f"{BASE}/lodz", "center": [51.76,19.46], "zoom": 13},
+    {"name": "gzm", "stops_url": f"{BASE}/api/gzm/transport", "socket_ns": "gzm", "referer": f"{BASE}/gzm", "center": [50.3,18.67], "zoom": 12},
+    {"name": "rzeszow", "stops_url": f"{BASE}/api/rzeszow/transport", "socket_ns": "rzeszow", "referer": f"{BASE}/rzeszow", "center": [50.04,22.00], "zoom": 13},
+    {"name": "slupsk", "stops_url": f"{BASE}/api/slupsk/transport", "socket_ns": "slupsk", "referer": f"{BASE}/slupsk", "center": [54.46,17.03], "zoom": 13},
+    {"name": "swinoujscie", "stops_url": f"{BASE}/api/swinoujscie/transport", "socket_ns": "swinoujscie", "referer": f"{BASE}/swinoujscie", "center": [53.91,14.25], "zoom": 13},
+    {"name": "szczecin", "stops_url": f"{BASE}/api/szczecin/transport", "socket_ns": "szczecin", "referer": f"{BASE}/szczecin", "center": [53.43,14.55], "zoom": 12},
+    {"name": "trojmiasto", "stops_url": f"{BASE}/api/trojmiasto/transport", "socket_ns": "trojmiasto", "referer": f"{BASE}/trojmiasto", "center": [54.35,18.65], "zoom": 12},
+]
 
-COOKIE = ""  # paste cookie here if needed
-if COOKIE:
-    HEADERS["Cookie"] = COOKIE
+COOKIE = ""  # optional cookie
+active_city_name = "zielonagora"
 
 latest_buses = {}
 latest_stops = {}
-last_update = 0
+last_update = {}
 
-def fetch_buses_once():
+def fetch_buses_once(city):
+    headers = {"User-Agent":"Mozilla/5.0","Origin":BASE,"Referer":city["referer"],"Accept":"*/*"}
+    if COOKIE: headers["Cookie"]=COOKIE
     try:
-        r = requests.get(SOCKET, headers=HEADERS, timeout=6)
-        sid_match = re.search(r'"sid":"([^"]+)"', r.text)
-        if not sid_match:
-            return {}
-        sid = sid_match.group(1)
-        url = f"{SOCKET}&sid={sid}"
-        requests.post(url, headers=HEADERS, data='40/zielonagora,{}', timeout=6)
+        r=requests.get(SOCKET, headers=headers, timeout=6)
+        sid_match=re.search(r'"sid":"([^"]+)"',r.text)
+        if not sid_match: return {}
+        sid=sid_match.group(1)
+        url=f"{SOCKET}&sid={sid}"
+        requests.post(url, headers=headers, data=f'40/{city["socket_ns"]},{{}}', timeout=6)
         time.sleep(1)
-        r = requests.get(url, headers=HEADERS, timeout=6)
-        if "42/zielonagora" not in r.text:
-            return {}
-        payload = r.text.split("42/zielonagora,")[1]
-        data = json.loads(payload)
-        return data[1].get("data", {})
+        r=requests.get(url, headers=headers, timeout=6)
+        if f"42/{city['socket_ns']}" not in r.text: return {}
+        payload=r.text.split(f"42/{city['socket_ns']},")[1]
+        data=json.loads(payload)
+        return data[1].get("data",{})
     except Exception as e:
-        print("bus fetch error:", e)
+        print(f"[{city['name']}] bus fetch error:",e)
         return {}
 
-def fetch_stops():
+def fetch_stops(city):
+    headers={"User-Agent":"Mozilla/5.0","Origin":BASE,"Referer":city["referer"],"Accept":"*/*"}
+    if COOKIE: headers["Cookie"]=COOKIE
     try:
-        r = requests.get(STOPS_URL, headers=HEADERS, timeout=6)
+        r=requests.get(city["stops_url"], headers=headers, timeout=6)
         r.raise_for_status()
-        data = r.json()
-        stops = data.get("stops", [])
-        result = []
+        data=r.json()
+        stops=data.get("stops",[])
+        result=[]
         for s in stops:
-            if len(s) >= 4:
+            if len(s)>=4:
                 result.append({
-                    "id": s[0],
-                    "name": s[1],
-                    "lat": s[2],
-                    "lon": s[3],
-                    "stop_name": s[1],
+                    "id":s[0],
+                    "name":s[1],
+                    "lat":s[2],
+                    "lon":s[3],
+                    "stop_name":s[1],
                     "trip_headsign": s[4] if len(s) > 4 else ""
                 })
         return result
     except Exception as e:
-        print("stop fetch error:", e)
+        print(f"[{city['name']}] stop fetch error:", e)
         return []
 
 def updater():
-    global latest_buses, latest_stops, last_update
+    global latest_buses, latest_stops, last_update, active_city_name
     while True:
-        buses = fetch_buses_once()
-        stops = fetch_stops()
-        if buses:
-            latest_buses = buses
-            last_update = time.time()
-            print(f"✅ {len(buses)} buses")
-        if stops:
-            latest_stops = stops
+        city = next((c for c in cities if c["name"]==active_city_name), None)
+        if city:
+            buses = fetch_buses_once(city)
+            stops = fetch_stops(city)
+            if buses:
+                latest_buses[city["name"]] = buses
+                last_update[city["name"]] = time.time()
+            if stops:
+                latest_stops[city["name"]] = stops
         time.sleep(4)
 
 @app.route("/")
 def index():
     html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8"/>
-      <title>Zielona Góra — Real-Time Bus Tracker</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <style>
-        html,body,#map{height:100%;margin:0;background:#1e1e1e;}
-        .leaflet-container { background: #1e1e1e; }
-        .bus-label {
-          font-size: 16px;
-          font-weight: bold;
-          text-align: center;
-          display: inline-block;
-        }
-        .stop-label {
-          font-size: 12px;
-          color: #00ffff;
-          text-align: center;
-          font-weight: bold;
-          text-shadow: 0 0 2px black;
-        }
-        #bus-info {
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          width: 100%;
-          background: rgba(0,0,0,0.85);
-          color: #fff;
-          font-size: 14px;
-          padding: 6px 10px;
-          z-index: 9999;
-        }
-        #stats {
-          position: fixed;
-          top: 10px;
-          right: 10px;
-          background: rgba(0,0,0,0.7);
-          color: #fff;
-          font-size: 14px;
-          padding: 6px 10px;
-          border-radius: 5px;
-          z-index: 9999;
-        }
-      </style>
-    </head>
-    <body>
-      <div id="map"></div>
-      <div id="bus-info">Click a bus or stop to see info...</div>
-      <div id="stats">Buses driving: 0</div>
-      <script>
-        const map = L.map('map').setView([51.94,15.50],13);
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Poland — Multi-City Bus Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+html,body,#map{height:100%;margin:0;background:#1e1e1e;}
+.leaflet-container { background: #1e1e1e; }
+.bus-label { font-size:16px;font-weight:bold;text-align:center;display:inline-block; }
+.stop-label { font-size:12px;color:#00ffff;text-align:center;font-weight:bold;text-shadow:0 0 2px black; }
+#bus-info { position: fixed; bottom:0; left:0; width:100%; background: rgba(0,0,0,0.85); color:#fff; font-size:14px; padding:6px 10px; z-index:9999; }
+#bus-marquee { position: fixed; top:0; left:0; width:100%; background: rgba(0,0,0,0.85); color:#fff; font-size:14px; white-space: nowrap; overflow:hidden; z-index:9999; padding:5px 10px;}
+#bus-marquee span { display:inline-block; padding-right:50px; }
+#stats { position: fixed; top:30px; right:10px; background: rgba(0,0,0,0.7); color:#fff; font-size:14px; padding:6px 10px; border-radius:5px; z-index:9999; }
+#menu-container { position: fixed; top:70px; right:10px; z-index:9999; }
+#menu-toggle { background: rgba(0,0,0,0.7); color:#fff; border:none; padding:5px 10px; border-radius:5px; cursor:pointer; font-weight:bold; }
+#menu { margin-top:5px; background: rgba(0,0,0,0.85); color:#fff; padding:10px; border-radius:5px; display:none; }
+#menu label { display:block; margin-bottom:5px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="bus-marquee"><div id="marquee-inner" style="display:inline-block;white-space:nowrap;"></div></div>
+<div id="map"></div>
+<div id="bus-info">Click a bus or stop to see info...</div>
+<div id="stats">Buses driving: 0</div>
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-          maxZoom: 19,
-          attribution: '&copy; OpenStreetMap & Carto'
-        }).addTo(map);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png').addTo(map);
+<div id="menu-container">
+  <button id="menu-toggle">Select city</button>
+  <div id="menu">
+    {% for c in cities %}
+      <label><input type="radio" name="city" class="city-radio" value="{{c}}" {% if loop.first %}checked{% endif %}> {{c}}</label>
+    {% endfor %}
+  </div>
+</div>
 
-        let busMarkers = {}, stopMarkers = [];
-        let trackedBusId = null;
+<script>
+const toggleBtn = document.getElementById("menu-toggle");
+const menu = document.getElementById("menu");
+toggleBtn.addEventListener("click", ()=>{menu.style.display = (menu.style.display==="none")?"block":"none";});
 
-        map.on('click', () => {
-          trackedBusId = null;
-          document.getElementById('bus-info').innerHTML = "Click a bus or stop to see info...";
+let activeCity = document.querySelector('.city-radio:checked').value;
+document.querySelectorAll('.city-radio').forEach(cb => { cb.addEventListener('change', ()=>{ if(cb.checked) setActiveCity(cb.value); }); });
+
+const map = L.map('map').setView([52,19],6);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap & Carto'}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png').addTo(map);
+
+let busMarkers = {}, stopMarkers = [], trackedBusId = null;
+const marqueeInner = document.getElementById("marquee-inner");
+
+// smooth continuous scroll
+let marqueeX = window.innerWidth;
+function animateMarquee(){
+    marqueeX -= 1;
+    if(marqueeX < -marqueeInner.offsetWidth) marqueeX = window.innerWidth;
+    marqueeInner.style.transform = `translateX(${marqueeX}px)`;
+    requestAnimationFrame(animateMarquee);
+}
+animateMarquee();
+
+function setActiveCity(city){
+    activeCity = city;
+    fetch('/api/set_city?city='+city);
+
+    // Clear markers from previous city
+    for(let id in busMarkers) map.removeLayer(busMarkers[id]);
+    busMarkers = {};
+    stopMarkers.forEach(m => map.removeLayer(m));
+    stopMarkers = [];
+    trackedBusId = null;
+    marqueeInner.textContent = "";
+
+    // Center map
+    const cData = {{cities|tojson}};
+    const cityInfo = cData.find(c => c.name === city);
+    if(cityInfo) map.setView(cityInfo.center, cityInfo.zoom);
+}
+
+async function update(){
+    const [busRes, stopRes] = await Promise.all([fetch('/api/buses'), fetch('/api/stops')]);
+    const buses = (await busRes.json())[activeCity] || {};
+    const stops = (await stopRes.json())[activeCity] || [];
+
+    document.getElementById('stats').innerHTML = "Buses driving: "+Object.keys(buses).length;
+
+    // marquee for buses delayed >30
+    const delayedBuses = Object.values(buses).filter(b=>b.delay>30);
+    marqueeInner.textContent = delayedBuses.map(b=>`${b.route_id||'?'} / ${b.vehicleNo||'?'} | Delay: ${b.delay}s | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}`).join("   ");
+
+    // stops
+    if(stopMarkers.length===0){
+        stops.forEach(s=>{
+            const m = L.marker([s.lat,s.lon], {icon:L.divIcon({className:'stop-label', html:`🚏<br>${s.stop_name}`, iconSize:[60,25], iconAnchor:[30,0]})}).addTo(map);
+            m.on('click', ()=>{ trackedBusId=null; document.getElementById('bus-info').innerHTML=`Stop: ${s.stop_name} | Driving to: ${s.trip_headsign||'n/a'}`; });
+            stopMarkers.push(m);
         });
+    }
 
-        async function update() {
-          const [busRes, stopRes] = await Promise.all([
-            fetch('/api/buses'), fetch('/api/stops')
-          ]);
-          const buses = await busRes.json();
-          const stops = await stopRes.json();
-
-          // Update stats panel
-          document.getElementById('stats').innerHTML = "Buses driving: " + Object.keys(buses).length;
-
-          // Draw stops
-          if (stopMarkers.length === 0 && stops.length) {
-            for (const s of stops) {
-              const m = L.marker([s.lat, s.lon], {
-                icon: L.divIcon({
-                  className: 'stop-label',
-                  html: `🚏<br>${s.stop_name}`,
-                  iconSize: [60, 25],
-                  iconAnchor: [30, 0]
-                })
-              }).addTo(map);
-
-              m.on('click', () => {
-                trackedBusId = null;
-                document.getElementById('bus-info').innerHTML =
-                  `Stop: ${s.stop_name} | Driving to: ${s.trip_headsign || 'n/a'}`;
-              });
-
-              stopMarkers.push(m);
-            }
-          }
-
-          // Draw buses
-          for (const [id, b] of Object.entries(buses)) {
-            if (!b.lat || !b.lon) continue;
-
-            const route = b.route_id || '?';
-            const busNo = b.vehicleNo || '?';
-            const angle = (b.angle || 0) - 90;
-
-            let color = "green";
-            if (b.delay !== undefined && !isNaN(Number(b.delay))) {
-                const d = Number(b.delay);
-                if (d > 60) color = "red";
-                else if (d > 0) color = "yellow";
-            }
-
-            const speedText = (b.speed !== undefined) ? b.speed + " km/h" : "";
-
-            const iconHtml = `
-              <div style="text-align:center;">
-                <div style="color:${color}; font-weight:bold; font-size:12px;">${route} / ${busNo}</div>
-                <div class="bus-label" style="color:${color}; transform: rotate(${angle}deg);">➤</div>
-              </div>
-            `;
-
-            const icon = L.divIcon({
-              className: '',
-              html: iconHtml,
-              iconSize: [50, 50],
-              iconAnchor: [25, 25]
-            });
-
-            if (!busMarkers[id]) {
-              busMarkers[id] = L.marker([b.lat, b.lon], { icon }).addTo(map);
-
-              busMarkers[id].on('click', () => {
-                trackedBusId = id;
-                document.getElementById('bus-info').innerHTML =
-                  `Route / Bus: ${route} / ${busNo} | Delay: ${b.delay || 'n/a'} | Speed: ${speedText} | Stop: ${b.stop_name || 'n/a'} | Driving to: ${b.trip_headsign || 'n/a'}`;
-              });
-
-            } else {
-              busMarkers[id].setLatLng([b.lat, b.lon]);
-              busMarkers[id].setIcon(icon);
-            }
-          }
-
-          // Auto-track selected bus
-          if (trackedBusId && busMarkers[trackedBusId]) {
-            const bus = buses[trackedBusId];
-            if (bus) {
-              map.setView([bus.lat, bus.lon], map.getZoom(), { animate: true });
-              const speedText = (bus.speed !== undefined) ? bus.speed + " km/h" : "";
-              document.getElementById('bus-info').innerHTML =
-                `Route / Bus: ${bus.route_id || '?'} / ${bus.vehicleNo || '?'} | Delay: ${bus.delay || 'n/a'} | Speed: ${speedText} | Stop: ${bus.stop_name || 'n/a'} | Driving to: ${bus.trip_headsign || 'n/a'}`;
-            }
-          }
+    // buses
+    for(const [id,b] of Object.entries(buses)){
+        if(!b.lat||!b.lon) continue;
+        const route=b.route_id||'?', busNo=b.vehicleNo||'?', angle=(b.angle||0)-90;
+        let color="green"; if(b.delay>60) color="red"; else if(b.delay>0) color="yellow";
+        const iconHtml=`<div style="text-align:center;"><div style="color:${color}; font-weight:bold; font-size:12px;">${route} / ${busNo}</div><div class="bus-label" style="color:${color}; transform: rotate(${angle}deg);">➤</div></div>`;
+        const icon=L.divIcon({className:'', html:iconHtml, iconSize:[50,50], iconAnchor:[25,25]});
+        if(!busMarkers[id]){
+            busMarkers[id]=L.marker([b.lat,b.lon],{icon}).addTo(map);
+            busMarkers[id].on('click', ()=>{ trackedBusId=id; document.getElementById('bus-info').innerHTML=`Route / Bus: ${route} / ${busNo} | Delay: ${b.delay||'n/a'} | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}`; });
+        } else {
+            busMarkers[id].setLatLng([b.lat,b.lon]);
+            busMarkers[id].setIcon(icon);
         }
+    }
 
-        update();
-        setInterval(update, 3500);
-      </script>
-    </body>
-    </html>
+    // track selected bus
+    if(trackedBusId && busMarkers[trackedBusId]){
+        const b = buses[trackedBusId];
+        if(b) map.setView([b.lat,b.lon], map.getZoom(), {animate:true});
+    }
+}
+
+update();
+setInterval(update,3500);
+
+// untrack bus on map click
+map.on('click', ()=>{ trackedBusId=null; document.getElementById('bus-info').innerHTML="Click a bus or stop to see info..."; });
+
+</script>
+</body>
+</html>
     """
-    return render_template_string(html)
+    return render_template_string(html, cities=[c["name"] for c in cities])
 
 @app.route("/api/buses")
 def api_buses():
-    return jsonify(latest_buses)
+    return jsonify({active_city_name: latest_buses.get(active_city_name, {})})
 
 @app.route("/api/stops")
 def api_stops():
-    return jsonify(latest_stops)
+    return jsonify({active_city_name: latest_stops.get(active_city_name, [])})
 
-if __name__ == "__main__":
-    threading.Thread(target=updater, daemon=True).start()
+@app.route("/api/set_city")
+def set_city():
+    global active_city_name
+    city = request.args.get("city")
+    if city in [c["name"] for c in cities]:
+        active_city_name = city
+    return jsonify({"active_city":active_city_name})
+
+if __name__=="__main__":
+    threading.Thread(target=updater,daemon=True).start()
     print("🌍 Running on http://localhost:5000")
     app.run(host="0.0.0.0", port=5000, threaded=True)
