@@ -101,21 +101,23 @@ def index():
 <style>
 html,body,#map{height:100%;margin:0;background:#101010;color:#0f0;font-family:'Courier New',monospace;}
 .leaflet-container { background:#101010; }
+.bus-label { font-size:14px;color:#0f0;text-align:center;display:block;margin-top:2px; }
 .stop-label { font-size:12px;color:#00ffff;text-align:center;font-weight:bold;text-shadow:0 0 2px black; }
 #bus-info { position: fixed; bottom:0; left:0; width:100%; background: rgba(0,0,0,0.85); color:#0f0; font-size:14px; padding:6px 10px; z-index:9999; border-top:1px solid #0f0; }
 #bus-marquee { position: fixed; top:0; left:0; width:100%; background: rgba(0,0,0,0.85); color:#0f0; font-size:14px; white-space: nowrap; overflow:hidden; z-index:9999; padding:5px 10px; border-bottom:1px solid #0f0; }
+#bus-marquee span { display:inline-block; padding-right:50px; }
 #stats { position: fixed; top:30px; right:10px; background: rgba(0,0,0,0.7); color:#0f0; font-size:14px; padding:6px 10px; border-radius:5px; z-index:9999; border:1px solid #0f0; }
 #menu-container { position: fixed; top:70px; right:10px; z-index:9999; }
 #menu-toggle { background: rgba(0,0,0,0.7); color:#0f0; border:1px solid #0f0; padding:5px 10px; border-radius:5px; cursor:pointer; font-weight:bold; }
 #menu { margin-top:5px; background: rgba(0,0,0,0.85); color:#0f0; padding:10px; border-radius:5px; display:none; border:1px solid #0f0; }
 #menu label { display:block; margin-bottom:5px; cursor:pointer; }
-
+#toggle-stops { position: fixed; bottom: 20px; right: 20px; z-index: 9999; background: rgba(0,0,0,0.7); color:#0f0; border:1px solid #0f0; padding:5px 10px; border-radius:5px; cursor:pointer; font-weight:bold; }
 @keyframes rgbGlow {
-  0%   { text-shadow: 0 0 8px red, 0 0 15px orange; }
-  25%  { text-shadow: 0 0 8px lime, 0 0 15px yellow; }
-  50%  { text-shadow: 0 0 8px cyan, 0 0 15px lightblue; }
-  75%  { text-shadow: 0 0 8px magenta, 0 0 15px violet; }
-  100% { text-shadow: 0 0 8px red, 0 0 15px orange; }
+  0% { text-shadow:0 0 8px red,0 0 15px red; }
+  25% { text-shadow:0 0 8px lime,0 0 15px yellow; }
+  50% { text-shadow:0 0 8px cyan,0 0 15px lightblue; }
+  75% { text-shadow:0 0 8px magenta,0 0 15px violet; }
+  100% { text-shadow:0 0 8px red,0 0 15px orange; }
 }
 </style>
 </head>
@@ -124,7 +126,6 @@ html,body,#map{height:100%;margin:0;background:#101010;color:#0f0;font-family:'C
 <div id="map"></div>
 <div id="bus-info">Click a bus or stop to see info...</div>
 <div id="stats">Buses driving: 0</div>
-
 <div id="menu-container">
   <button id="menu-toggle">Select city</button>
   <div id="menu">
@@ -133,24 +134,30 @@ html,body,#map{height:100%;margin:0;background:#101010;color:#0f0;font-family:'C
     {% endfor %}
   </div>
 </div>
-
+<button id="toggle-stops">Hide Stops</button>
 <script>
 const toggleBtn=document.getElementById("menu-toggle");
 const menu=document.getElementById("menu");
 toggleBtn.addEventListener("click",()=>{menu.style.display=(menu.style.display==="none")?"block":"none";});
 
 let activeCity=document.querySelector('.city-radio:checked').value;
-document.querySelectorAll('.city-radio').forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)setActiveCity(cb.value);})); 
+document.querySelectorAll('.city-radio').forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)setActiveCity(cb.value);}));
 
 const map=L.map('map').setView([52,19],6);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png').addTo(map);
 
-let busMarkers={},stopMarkers=[],trackedBusId=null;
+let busMarkers={},stopMarkers=[],trackedBusId=null,stopsVisible=true;
 const marqueeInner=document.getElementById("marquee-inner");
 let marqueeX=window.innerWidth;
 function animateMarquee(){marqueeX-=0.5;if(marqueeX<-marqueeInner.offsetWidth)marqueeX=window.innerWidth;marqueeInner.style.transform=`translateX(${marqueeX}px)`;requestAnimationFrame(animateMarquee);}
 animateMarquee();
+
+document.getElementById('toggle-stops').addEventListener('click',()=>{
+    stopsVisible=!stopsVisible;
+    stopMarkers.forEach(m=>stopsVisible?map.addLayer(m):map.removeLayer(m));
+    document.getElementById('toggle-stops').innerText=stopsVisible?'Hide Stops':'Show Stops';
+});
 
 function setActiveCity(city){
     activeCity=city;
@@ -188,7 +195,8 @@ async function update(){
 
     if(stopMarkers.length===0){
         stops.forEach(s=>{
-            const m=L.marker([s.lat,s.lon],{icon:L.divIcon({className:'stop-label',html:`🚏<br>${s.stop_name}`,iconSize:[60,25],iconAnchor:[30,0]})}).addTo(map);
+            const m=L.marker([s.lat,s.lon],{icon:L.divIcon({className:'stop-label',html:`🚏<br>${s.stop_name}`,iconSize:[60,25],iconAnchor:[30,0]})});
+            m.addTo(map);
             m.on('click',()=>{trackedBusId=null;document.getElementById('bus-info').innerHTML=`Stop: ${s.stop_name} | Driving to: ${s.trip_headsign||'n/a'}`;});
             stopMarkers.push(m);
         });
@@ -196,18 +204,14 @@ async function update(){
 
     for(const [id,b] of Object.entries(buses)){
         if(!b.lat||!b.lon)continue;
-        const route=b.route_id||'?';
-        const busNo=b.vehicleNo||'?';
-        const angle=(b.angle||0)-90;
+        const route=b.route_id||'?'; const busNo=b.vehicleNo||'?'; const angle=(b.angle||0)-90;
         const color=delayColor(b.delay||0);
-
         const iconHtml=`
-        <div style="text-align:center;">
-            <div style="font-size:26px; transform: rotate(${angle}deg); color:${color}; animation: rgbGlow 4s infinite linear;">➤</div>
-            <div class="bus-label" style="color:${color}; font-size:16px;">${route} / ${busNo}</div>
-        </div>`;
+<div style="text-align:center;">
+  <div style="font-size:26px; transform: rotate(${angle}deg); color:${color}; animation: rgbGlow 4s infinite linear;">➤</div>
+  <div class="bus-label" style="color:${color};">${route} / ${busNo}</div>
+</div>`;
         const icon=L.divIcon({className:'',html:iconHtml,iconSize:[50,50],iconAnchor:[25,25]});
-
         if(!busMarkers[id]){
             busMarkers[id]=L.marker([b.lat,b.lon],{icon}).addTo(map);
             busMarkers[id].on('click',()=>{
