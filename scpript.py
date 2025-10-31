@@ -216,7 +216,7 @@ async function update(){
             busMarkers[id]=L.marker([b.lat,b.lon],{icon}).addTo(map);
             busMarkers[id].on('click',()=>{
                 trackedBusId=id;
-                document.getElementById('bus-info').innerHTML=`Route / Bus: ${route} / ${busNo} | Status: ${b.current_status||'n/a'} | Delay: ${b.delay||'n/a'} | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}`;
+                document.getElementById('bus-info').innerHTML=`Route / Bus: ${route} / ${busNo} | Status: ${b.current_status||'n/a'} | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'} | Delay: ${b.delay||'n/a'} | Speed: ${b.speed||'n/a'}`;
             });
         }else{
             busMarkers[id].setLatLng([b.lat,b.lon]);
@@ -226,7 +226,7 @@ async function update(){
 
     if(trackedBusId && buses[trackedBusId]){
         const b=buses[trackedBusId];
-        document.getElementById('bus-info').innerHTML=`Route / Bus: ${b.route_id||'?'} / ${b.vehicleNo||'?'} | Status: ${b.current_status||'n/a'} | Delay: ${b.delay||'n/a'} | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'}`;
+        document.getElementById('bus-info').innerHTML=`Route / Bus: ${route} / ${busNo} | Status: ${b.current_status||'n/a'} | Stop: ${b.stop_name||'n/a'} | Driving to: ${b.trip_headsign||'n/a'} | Delay: ${b.delay||'n/a'} | Speed: ${b.speed||'n/a'}`;
         map.setView([b.lat,b.lon],map.getZoom(),{animate:true});
     }
 }
