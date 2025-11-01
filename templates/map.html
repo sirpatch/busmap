@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Live Bus Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0d0d0d; color: #00ff99; font-family: 'Courier New', monospace; overflow: hidden; }
+    #map { width: 100%; height: 100%; filter: contrast(1.2) brightness(1.1) saturate(1.2); }
+
+    /* CRT-style overlay */
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(transparent 0, rgba(0,255,0,0.04) 1px, transparent 2px);
+      pointer-events: none; z-index: 1000;
+    }
+
+    .stats-box {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 10px 15px; border: 1px solid #00ff99;
+      font-size: 14px; border-radius: 5px;
+      z-index: 999;
+    }
+
+    .menu { margin-top: 10px; display: none; flex-direction: column; gap: 5px; }
+    .menu button {
+      background: black; color: #00ff99; border: 1px solid #00ff99;
+      cursor: pointer; font-family: inherit;
+    }
+    .menu button:hover { background: #00ff99; color: black; }
+
+    .footer {
+      position: absolute; bottom: 0; width: 100%;
+      background: rgba(0,0,0,0.75);
+      border-top: 1px solid #00ff99;
+      text-align: center;
+      padding: 6px;
+      font-size: 15px;
+      color: #00ff99;
+    }
+
+    .marquee {
+      position: absolute; top: 0; left: 0; width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+      background: rgba(0,0,0,0.7);
+      border-bottom: 1px solid #00ff99;
+      color: #00ff99;
+      font-size: 14px;
+      height: 22px;
+      z-index: 999;
+    }
+
+    .marquee span {
+      display: inline-block;
+      padding-left: 100%;
+      animation: scrollMarquee 40s linear infinite;
+    }
+
+    @keyframes scrollMarquee {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+
+    .bus-text {
+      text-shadow: 0 0 8px rgba(0,255,255,0.7);
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .bus-arrow {
+      text-shadow: 0 0 8px rgba(255,255,255,0.6);
+      font-size: 20px;
+      filter: drop-shadow(0 0 4px white);
+      transition: filter 1s linear;
+    }
+
+    .toggle-stops {
+      position: absolute; bottom: 15px; right: 15px;
+      background: black; border: 1px solid #00ff99; color: #00ff99;
+      padding: 6px 10px; cursor: pointer; z-index: 999;
+      border-radius: 5px; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="marquee"><span id="delayMarquee"></span></div>
+  <div id="map"></div>
+  <div class="stats-box">
+    <div id="busCount">Buses driving: 0</div>
+    <button id="menuToggle">☰ Menu</button>
+    <div class="menu" id="menu"></div>
+  </div>
+  <div class="footer" id="busInfo">Select a bus...</div>
+  <button class="toggle-stops" id="toggleStops">Hide Stops</button>
+
+  <script>
+    const map = L.map('map').setView([51.9356, 15.5062], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    let currentCity = 'zielonagora';
+    let busMarkers = {};
+    let stopMarkers = [];
+    let trackingBus = null;
+    let stopsVisible = true;
+
+    async function loadCityData(city) {
+      currentCity = city;
+      Object.values(busMarkers).forEach(m => map.removeLayer(m.marker));
+      busMarkers = {};
+      stopMarkers.forEach(m => map.removeLayer(m));
+      stopMarkers = [];
+      document.getElementById('busInfo').textContent = "Loading " + city + "...";
+
+      const res = await fetch(`/data/${city}`);
+      const data = await res.json();
+      if (!data?.buses) return;
+
+      data.stops.forEach(stop => {
+        const marker = L.circleMarker([stop.lat, stop.lon], {
+          radius: 3, color: '#00ff99', fillOpacity: 1
+        }).addTo(map).bindTooltip(`${stop.stop_name} - ${stop.id}`, { permanent: true, direction: 'top', className: 'bus-text' });
+        stopMarkers.push(marker);
+      });
+
+      updateBuses(data.buses);
+    }
+
+    function updateBuses(buses) {
+      let delayedText = [];
+      let count = 0;
+
+      buses.forEach(bus => {
+        count++;
+        const delay = bus.delay || 0;
+        const delayColor = delay > 60 ? 'red' : delay > 30 ? 'orange' : 'lime';
+        const rotation = bus.bearing || 0;
+        const arrow = `➤`;
+        const icon = L.divIcon({
+          className: 'bus-marker',
+          html: `<div style="text-align:center; filter: drop-shadow(0 0 10px ${delayColor});
+                    animation: rgbGlow 2s infinite alternate;">
+                    <div class='bus-arrow' style="color:${delayColor}; transform: rotate(${rotation}deg)">${arrow}</div>
+                    <div class='bus-text' style="color:${delayColor};">${bus.routeShortName}/${bus.vehicleCode}</div>
+                 </div>`,
+          iconSize: [30, 30],
+          iconAnchor: [15, 15]
+        });
+
+        if (!busMarkers[bus.vehicleCode]) {
+          const marker = L.marker([bus.lat, bus.lon], { icon }).addTo(map);
+          marker.on('click', () => {
+            trackingBus = bus.vehicleCode;
+            document.getElementById('busInfo').textContent =
+              `Bus: ${bus.routeShortName} / ${bus.vehicleCode} | Status: ${bus.current_status} | Delay: ${delay}s | Stop: ${bus.stop_name || 'N/A'} | Driving to: ${bus.trip_headsign}`;
+          });
+          busMarkers[bus.vehicleCode] = { marker };
+        } else {
+          busMarkers[bus.vehicleCode].marker.setLatLng([bus.lat, bus.lon]);
+          busMarkers[bus.vehicleCode].marker.setIcon(icon);
+        }
+
+        if (delay > 30)
+          delayedText.push(`${bus.routeShortName}/${bus.vehicleCode} | Delay: ${delay}s | Stop: ${bus.stop_name} | Driving to: ${bus.trip_headsign}`);
+      });
+
+      document.getElementById('busCount').textContent = `Buses driving: ${count}`;
+      document.getElementById('delayMarquee').textContent = delayedText.join("   ||   ");
+
+      if (trackingBus && busMarkers[trackingBus]) {
+        map.panTo(busMarkers[trackingBus].marker.getLatLng());
+      }
+    }
+
+    map.on('click', () => { trackingBus = null; });
+
+    document.getElementById('toggleStops').onclick = () => {
+      stopsVisible = !stopsVisible;
+      stopMarkers.forEach(m => stopsVisible ? m.addTo(map) : map.removeLayer(m));
+      document.getElementById('toggleStops').textContent = stopsVisible ? "Hide Stops" : "Show Stops";
+    };
+
+    document.getElementById('menuToggle').onclick = () => {
+      const menu = document.getElementById('menu');
+      menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+    };
+
+    async function loadMenu() {
+      const res = await fetch('/');
+      const cities = {{ cities|tojson }};
+      const menu = document.getElementById('menu');
+      menu.innerHTML = "";
+      cities.forEach(city => {
+        const btn = document.createElement('button');
+        btn.textContent = city;
+        btn.onclick = () => { loadCityData(city); };
+        menu.appendChild(btn);
+      });
+    }
+
+    loadMenu();
+    loadCityData('zielonagora');
+    setInterval(() => loadCityData(currentCity), 10000);
+  </script>
+</body>
+</html>
