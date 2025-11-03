@@ -1,1 +1,11 @@
-Ready to use Polish bus tracking.
+There are 2 files.
+One is for hosting bus data (json_host.py)
+Second one is for hosting simple map website on localhost with all neccessary data to show bus and stops locations. (bus_map.py)
+
+both files will work as long as czynacza.pl don't change anything related to this data...
+
+I also provide this data world-wide on my website.
+
+Zielona Gora API
+bus data: https://api.patched.cc/busproject/zielonagora_bus_data.json
+stops: https://api.patched.cc/busproject/zielonagora_stop.json
