@@ -7,5 +7,5 @@ both files will work as long as czynacza.pl don't change anything related to thi
 I also provide this data world-wide on my website.
 
 # Zielona Gora API
-1. bus data: https://api.patched.cc/busproject/zielonagora_bus_data.json
-2. stops: https://api.patched.cc/busproject/zielonagora_stop.json
+bus data: https://api.patched.cc/busproject/zielonagora_bus_data.json
+stops: https://api.patched.cc/busproject/zielonagora_stop.json
