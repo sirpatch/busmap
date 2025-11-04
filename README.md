@@ -22,8 +22,8 @@ Not YET available...
 2. stops: http://127.0.0.1:5000/busproject/zielonagora_stop.json
 
 # Other cities
-1. bus data: https://api.patched.cc/busproject/CITY_bus_data.json
-2. stops: https://api.patched.cc/busproject/CITY_stop.json
+1. bus data: http://127.0.0.1:5000/busproject/CITY_bus_data.json
+2. stops: http://127.0.0.1:5000/busproject/CITY_stop.json
 
 Just insert Your city in CITY and it should work.
 
