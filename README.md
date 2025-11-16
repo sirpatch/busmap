@@ -14,12 +14,19 @@ If You make request every 2 seconds nothing will change untill czynaczas.pl data
 
 # IMPORTANT NOTE ABOUT PUBLIC API
 
-Im working on hosting it...
-Not YET available...
+Host is stable and data is available.
+
+# Zielona Gora API - PUBLIC
+1. bus data: https://api.patched.cc/busproject/zielonagora_bus_data.json
+2. stops: https://api.patched.cc/busproject/zielonagora_stop.json
+
+# Other cities - PUBLIC API
+1. bus data: http://127.0.0.1:5000/busproject/CITY_bus_data.json
+2. stops: http://127.0.0.1:5000/busproject/CITY_stop.json
 
 # Zielona Gora API - SELF HOST
-1. bus data: http://127.0.0.1:5000/busproject/zielonagora_bus_data.json
-2. stops: http://127.0.0.1:5000/busproject/zielonagora_stop.json
+1. bus data: https://api.patched.cc/busproject/zielonagora_bus_data.json
+2. stops: https://api.patched.cc/busproject/zielonagora_stop.json
 
 # Other cities
 1. bus data: http://127.0.0.1:5000/busproject/CITY_bus_data.json
